@@ -15,6 +15,21 @@
 - `torch.cuda.is_available()` 기반 자동 감지
 - `DEVICE` 환경 변수로 오버라이드 가능
 
+### 다중 GPU 환경 (H200 4장)
+
+운영 환경은 H200 4장이므로 인스턴스마다 사용할 GPU를 명시적으로 지정한다.
+
+```bash
+# GPU 0번에 서버 기동 (포트 8000)
+DEVICE=cuda:0 uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# GPU 1번에 서버 기동 (포트 8001)
+DEVICE=cuda:1 uvicorn app.main:app --host 0.0.0.0 --port 8001
+```
+
+`DEVICE`를 지정하지 않으면 `cuda:0`이 기본으로 선택된다.
+같은 GPU에 여러 인스턴스를 올리는 것도 가능하지만, CodeT5p-220m은 모델 자체가 ~880MB라 GPU당 1개 인스턴스로도 메모리 여유가 충분하다.
+
 ## 모델 캐시
 
 - `HF_HOME` 환경 변수로 HuggingFace 모델 다운로드 경로 지정

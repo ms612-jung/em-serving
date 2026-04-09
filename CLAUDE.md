@@ -25,6 +25,8 @@ Embedding Model 서빙 서버 (FastAPI 기반)
 ```
 EmbeddingBackend (Protocol)
 ├── embed(texts: list[str]) -> list[list[float]]
+├── slice_code(code: str) -> list[str]
+├── count_tokens(text: str) -> int
 │
 ├── CodeT5pBackend        ← 현재: T5EncoderModel + Mean Pooling
 ├── SentenceTransformerBackend  ← 향후: sentence-transformers 모델
@@ -39,7 +41,7 @@ EmbeddingBackend (Protocol)
 
 | Method | Endpoint | 설명 |
 |--------|----------|------|
-| POST | `/v1/embeddings` | 텍스트를 embedding 벡터로 변환 |
+| POST | `/v1/embeddings` | 텍스트를 embedding 벡터로 변환 (`chunking` 옵션으로 동작 선택) |
 | GET | `/health` | 서버 상태 확인 |
 
 ### POST /v1/embeddings
@@ -47,11 +49,15 @@ EmbeddingBackend (Protocol)
 요청:
 ```json
 {
-  "input": "string 또는 string[]"
+  "input": "string 또는 string[]",
+  "chunking": false
 }
 ```
 
-응답:
+- `chunking: false` (기본값): 입력을 그대로 embedding. `max_token_size` 초과 시 truncation.
+- `chunking: true`: 긴 입력을 sliding window(`max_token_size`=512, `stride`=256)로 분할 후 청크별 embedding.
+
+응답 (`chunking: false`):
 ```json
 {
   "data": [
@@ -68,6 +74,27 @@ EmbeddingBackend (Protocol)
 }
 ```
 
+응답 (`chunking: true`):
+```json
+{
+  "data": [
+    {
+      "input_index": 0,
+      "chunk_count": 3,
+      "embeddings": [
+        {"index": 0, "embedding": [0.1, ...], "token_count": 512},
+        {"index": 1, "embedding": [0.2, ...], "token_count": 512},
+        {"index": 2, "embedding": [0.3, ...], "token_count": 230}
+      ]
+    }
+  ],
+  "model": "codet5p-220m",
+  "usage": {
+    "total_tokens": 1254
+  }
+}
+```
+
 ### 사용 예시
 
 ```bash
@@ -80,6 +107,11 @@ curl -X POST http://localhost:8000/v1/embeddings \
 curl -X POST http://localhost:8000/v1/embeddings \
   -H "Content-Type: application/json" \
   -d '{"input": ["hello world", "def foo(): pass"]}'
+
+# chunking: 긴 코드 파일
+curl -X POST http://localhost:8000/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{"input": "def foo():\n    ... 긴 코드 ...", "chunking": true}'
 ```
 
 ## 프로젝트 구조
@@ -124,11 +156,12 @@ em-serving/
 
 ## 핵심 구현 포인트
 
-1. **백엔드 프로토콜**: `embed(texts) -> vectors` 인터페이스 통일
+1. **백엔드 프로토콜**: `embed(texts) -> vectors`, `slice_code(code) -> snippets`, `count_tokens(text) -> int` 인터페이스 통일
 2. **CodeT5p 백엔드**: `T5EncoderModel` (인코더만 로딩) + attention mask 기반 mean pooling
-3. **배치 처리**: 여러 입력을 한 번에 받아 배치 인퍼런스
-4. **torch.no_grad()**: 인퍼런스 시 그래디언트 비활성화
-5. **디바이스 관리**: `torch.cuda.is_available()` 기반 자동 감지
+3. **배치 처리**: `batch_size` 단위로 나눠 forward pass (OOM 방지)
+4. **Sliding window 슬라이싱**: 긴 코드를 `max_token_size`/`stride` 기반으로 겹치며 분할
+5. **torch.no_grad()**: 인퍼런스 시 그래디언트 비활성화
+6. **디바이스 관리**: `torch.cuda.is_available()` 기반 자동 감지
 
 ## 명령어
 
