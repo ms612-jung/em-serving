@@ -9,7 +9,17 @@ jobs:
     steps:
       - name: Pull from public GitHub and push to internal
         shell: pwsh
+        env:
+          http_proxy: ${{ vars.PROXY_SERVER }}
+          https_proxy: ${{ vars.PROXY_SERVER }}
+          HTTP_PROXY: ${{ vars.PROXY_SERVER }}
+          HTTPS_PROXY: ${{ vars.PROXY_SERVER }}
+          no_proxy: ${{ vars.NO_PROXY }}
+          NO_PROXY: ${{ vars.NO_PROXY }}
         run: |
+          # SSL 인증서 설정
+          git config --global http.sslCAInfo "${{ vars.SSL_CERT_PATH }}"
+
           $WorkDir = Join-Path $env:TEMP "mirror-$(New-Guid)"
           New-Item -ItemType Directory -Path $WorkDir | Out-Null
 
