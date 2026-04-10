@@ -1,0 +1,33 @@
+name: Fetch Upstream
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fetch-upstream:
+    runs-on: [oa]
+    steps:
+      - name: Pull from public GitHub and push to internal
+        shell: pwsh
+        run: |
+          $WorkDir = Join-Path $env:TEMP "mirror-$(New-Guid)"
+          New-Item -ItemType Directory -Path $WorkDir | Out-Null
+
+          try {
+            # Public GitHub에서 bare clone
+            git clone --bare "https://${{ secrets.PUBLIC_GH_TOKEN }}@${{ vars.PUBLIC_GH_REPO_URL }}" "$WorkDir/repo.git"
+
+            Push-Location "$WorkDir/repo.git"
+
+            # 사내 repo로 mirror push
+            git remote add ds "${{ github.server_url }}/${{ github.repository }}.git"
+
+            # GHE Server 인증은 GITHUB_TOKEN 사용
+            git -c http.extraHeader="Authorization: token ${{ secrets.DS_GH_TOKEN }}" push ds --mirror
+
+            Pop-Location
+          }
+          finally {
+            # 임시 디렉토리 정리
+            Remove-Item -Recurse -Force $WorkDir -ErrorAction SilentlyContinue
+          }
